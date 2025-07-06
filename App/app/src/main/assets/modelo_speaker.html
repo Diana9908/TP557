@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Locutor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 7px 2vw 0 2vw;
+      background: #fff;
+      min-width: 0;
+      min-height: 0;
+      width: 100vw;
+      box-sizing: border-box;
+      overflow-x: hidden;
+    }
+    h2 {
+      color: #2d3a4a;
+      margin-top: 5px;
+      margin-bottom: 10px;
+      font-size: 1.2rem;
+      background: #e8f0ffbb;
+      border-radius: 7px;
+      padding: 2px 13px;
+      max-width: 96vw;
+      display: inline-block;
+    }
+    #status {
+      font-weight: bold;
+      margin-top: 8px;
+      color: #1a4648;
+    }
+    #result {
+      margin-top: 16px;
+      font-size: 1.1rem;
+      color: #18466b;
+      word-break: break-word;
+      max-width: 98vw;
+    }
+    @media (max-width: 600px) {
+      h2 { font-size: 1.01rem; padding: 2px 4vw; }
+      #status, #result { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+<h2>Falante</h2>
+<div id="status">Status: Aguardando áudio</div>
+<div id="result"></div>
+
+<script src="edge-impulse-standalone-speaker.js?v=2"></script>
+<script src="run-impulse-speaker.js?v=2"></script>
+<script>
+  let classifier, isModelInitialized = false;
+  const statusDiv = document.getElementById('status');
+  const resultDiv = document.getElementById('result');
+  const TARGET_SAMPLE_RATE = 16000;
+  const EXPECTED_SAMPLES = TARGET_SAMPLE_RATE; 
+  let cleanTimeout = null;
+
+  async function initModel() {
+    statusDiv.textContent = 'Status: Inicializando modelo...';
+    try {
+      classifier = new EdgeImpulseClassifier2();
+      await classifier.init();
+      isModelInitialized = true;
+      statusDiv.textContent = 'Status: Pronto para classificação';
+      console.log('[Speaker] Modelo speaker carregado.');
+    } catch (err) {
+      console.error('Erro ao carregar o modelo:', err);
+      statusDiv.textContent = `Erro ao carregar o modelo: ${err.message}`;
+    }
+  }
+  initModel();
+
+  async function classifyFromArray(audioArray) {
+    if (!isModelInitialized) {
+      resultDiv.textContent = 'Modelo ainda não carregado.';
+      console.error('[Speaker] Modelo ainda não carregado.');
+      return;
+    }
+    if (!audioArray || audioArray.length !== EXPECTED_SAMPLES) {
+      resultDiv.textContent = `Áudio inválido recebido! Esperado: ${EXPECTED_SAMPLES}, recebido: ${audioArray ? audioArray.length : 'null'}`;
+      console.error('[Speaker] Áudio inválido:', audioArray);
+      return;
+    }
+
+    statusDiv.textContent = 'Status: Classificando...';
+    try {
+      const inputData = new Float32Array(audioArray);
+      const result = await classifier.classifyContinuous(inputData, true);
+      const topSpeaker = result.results.reduce(
+        (max, curr) => max.value > curr.value ? max : curr,
+        result.results[0]
+      );
+
+      
+      resultDiv.innerHTML = `<b>Locutor:</b> ${topSpeaker.label} (${(topSpeaker.value * 100).toFixed(1)}%)`;
+      if (window.parent !== window) {
+        window.parent.postMessage({
+          modelo: 'speaker',
+          label: topSpeaker.label,
+          value: topSpeaker.value
+        }, '*');
+      }
+      clearTimeout(cleanTimeout);
+      cleanTimeout = setTimeout(() => {
+        resultDiv.textContent = '';
+      }, 1000);
+
+      statusDiv.textContent = 'Status: Pronto para próxima classificação';
+      console.log('[Speaker] Classificação feita:', topSpeaker.label, 'Prob:', topSpeaker.value);
+    } catch (err) {
+      resultDiv.textContent = `Erro: ${err.message}`;
+      statusDiv.textContent = 'Status: Erro na classificação';
+      console.error('[Speaker] Erro na classificação:', err);
+      clearTimeout(cleanTimeout);
+      cleanTimeout = setTimeout(() => {
+        resultDiv.textContent = '';
+      }, 1000);
+    }
+  }
+
+  window.addEventListener("message", (event) => {
+    console.log('[Speaker] Recebido mensagem:', event.data);
+    if (event.data.action === "classifyAudio" && Array.isArray(event.data.audioArray)) {
+      classifyFromArray(event.data.audioArray);
+    }
+  });
+</script>
+</body>
+</html>

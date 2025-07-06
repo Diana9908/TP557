@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Classificação de Áudio: Palavra-chave e Locutor</title>
+  <style>
+    html, body {
+      min-height: 100vh;
+      background: #f0f3f9;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 0 2vw;
+      background: url('fondo.jpg') no-repeat center center fixed;
+      background-size: cover;
+      box-sizing: border-box;
+      min-height: 100vh;
+      padding-bottom: 36px;
+    }
+    h1 {
+      font-size: 2.2rem;
+      margin: 18px 0 13px 0;
+      color: #2d3a4a;
+      text-shadow: 2px 2px 10px #f0f0f0;
+      background: rgba(255,255,255,0.83);
+      border-radius: 10px;
+      padding: 7px 38px;
+      text-align: center;
+      max-width: 96vw;
+      word-break: break-word;
+    }
+    .control-panel {
+      margin-bottom: 17px;
+      margin-top: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+    .control-panel button {
+      padding: 13px 33px;
+      font-size: 1.14rem;
+      border-radius: 8px;
+      margin: 0 12px 0 0;
+      border: none;
+      background: #2d84fb;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 2px 7px #0002;
+      transition: background 0.2s;
+    }
+    .control-panel button:disabled {
+      background: #ccc;
+      color: #888;
+      cursor: not-allowed;
+    }
+    .iframe-panel {
+      display: flex;
+      flex-direction: row;
+      gap: 15px;
+      align-items: flex-start;
+      justify-content: center;
+      margin-bottom: 10px;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    iframe {
+      width: 250px;
+      height: 100px;
+      border: 2px solid #8ea3b4;
+      border-radius: 15px;
+      background: #fff;
+      box-shadow: 0 3px 13px #7b97ad23;
+      transition: width 0.3s, height 0.3s;
+      max-width: 95vw;
+      display: block;
+    }
+    .alarme-panel {
+      width: 280px;
+      height: 49px;
+      background: #fff;
+      border: 2px solid #8ea3b4;
+      border-radius: 15px;
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-sizing: border-box;
+      box-shadow: 0 2px 12px #0001;
+      max-width: 99vw;
+      flex-direction: column;
+    }
+    #alarme {
+      display: none;
+      font-size: 1.3rem;
+      color: #fff;
+      background: #dc143c;
+      padding: 6px 24px;
+      border-radius: 10px;
+      font-weight: bold;
+      box-shadow: 0 2px 8px #aa505050;
+      text-align: center;
+      min-width: 110px;
+      background: linear-gradient(90deg, #e63946 0%, #a40606 100%);
+      transition: opacity 0.3s;
+      letter-spacing: 2px;
+    }
+    #sos-alarme {
+      display: none;
+      color: #fff;
+      background: #B22222;
+      font-size: 1.3rem;
+      border-radius: 10px;
+      font-weight: bold;
+      margin-top: 7px;
+      padding: 7px 18px;
+      box-shadow: 0 2px 13px #aa505077;
+      letter-spacing: 2px;
+    }
+    @media (max-width: 900px) {
+      .iframe-panel { flex-direction: column; gap: 16px; }
+      iframe, .alarme-panel { width: 98vw !important; min-width: 90px; }
+      iframe { height: 120px !important; }
+      .alarme-panel { height: 54px; }
+      h1 { font-size: 1.45rem; padding: 7px 3vw;}
+    }
+    @media (max-width: 600px) {
+      h1 { font-size: 1.1rem; padding: 4px 2vw; }
+      .control-panel button { font-size: 1rem; padding: 10px 12px;}
+      iframe, .alarme-panel { width: 99vw !important; min-width: 55px !important; }
+      iframe { height: 120px !important; }
+      .alarme-panel { height: 36px !important; }
+      #alarme, #sos-alarme { font-size: 0.94rem !important; min-width: 33px !important;}
+    }
+    .app-signature {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      padding: 8px 0;
+      background: rgba(255, 255, 255, 0.85);
+      text-align: center;
+      font-size: 0.9rem;
+      color: #2d3a4a;
+      box-shadow: 0 -1px 5px rgba(0,0,0,0.1);
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+<h1>Classificação de Áudio em Tempo Real</h1>
+
+<div id="telegram-config" style="margin-bottom:15px; display: none; flex-direction: column; align-items: center;">
+  <label for="chatIdInput1" style="margin-bottom:5px;">ID do primeiro contato do Telegram:</label>
+  <input type="text" id="chatIdInput1" placeholder="Digite o primeiro chat_id" style="padding:7px; border-radius:5px; border:1px solid #ccc; font-size:1rem; width:230px; margin-bottom:10px;">
+  <label for="chatIdInput2" style="margin-bottom:5px;">ID do segundo contato do Telegram (opcional):</label>
+  <input type="text" id="chatIdInput2" placeholder="Digite o segundo chat_id" style="padding:7px; border-radius:5px; border:1px solid #ccc; font-size:1rem; width:230px;">
+  <button onclick="salvarChatIds()" style="margin-top:7px; padding:8px 15px; font-size:1rem; border-radius:6px; background:#2d84fb; color:white; border:none;">Salvar contatos</button>
+</div>
+
+<div class="iframe-panel">
+  <iframe id="kwsFrame" src="modelo_kws.html" title="Palavra-chave"></iframe>
+  <iframe id="speakerFrame" src="modelo_speaker.html" title="Locutor"></iframe>
+</div>
+
+<div class="alarme-panel">
+  <div id="alarme"></div>
+  <div id="sos-alarme">SOS enviado</div>
+</div>
+
+<div class="control-panel">
+  <button id="btnStart">🎙️</button>
+  <button id="btnStop" disabled>❌</button>
+  <button onclick="mostrarConfigTelegram()" style="padding:13px 33px; font-size:1.14rem; border-radius:8px; margin:0 12px 0 0; border:none; background:#2d84fb; color:white; cursor:pointer; box-shadow:0 2px 7px #0002; transition:background 0.2s;">Alterar contato</button>
+</div>
+
+<footer class="app-signature">by Diana Laura</footer>
+
+<script>
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+  const kwsFrame = document.getElementById('kwsFrame');
+  const speakerFrame = document.getElementById('speakerFrame');
+
+  let lastKwsForwardTime = 0;
+  const KWS_FORWARD_INTERVAL = 1000;
+
+  let ultimoKws = { label: '', value: 0 };
+  let alarmeTimeout = null;
+  let sosTimeout = null;
+  let alertaActivacoes = [];
+  let lastLat = null;
+  let lastLon = null;
+  let ubicacionDisponible = false;
+
+  window.addEventListener('DOMContentLoaded', () => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          lastLat = pos.coords.latitude;
+          lastLon = pos.coords.longitude;
+          ubicacionDisponible = true;
+          console.log("Geolocalização obtida:", lastLat, lastLon);
+        },
+        err => {
+          ubicacionDisponible = false;
+          console.error("Erro ao obter geolocalização:", err);
+        }
+      );
+    }
+  });
+
+  function normaliza(label) {
+    return (label || "").toLowerCase().trim();
+  }
+
+  btnStart.onclick = () => {
+    kwsFrame.contentWindow.postMessage({ action: "startListening" }, "*");
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+    ocultarAlarme();
+    ocultarSOS();
+    alertaActivacoes = [];
+    console.log("Escuta iniciada");
+  };
+
+  btnStop.onclick = () => {
+    kwsFrame.contentWindow.postMessage({ action: "stopListening" }, "*");
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    ocultarAlarme();
+    ocultarSOS();
+    alertaActivacoes = [];
+    console.log("Escuta parada");
+  };
+
+  window.addEventListener('message', event => {
+    if (event.data && event.data.modelo === 'kws' && Array.isArray(event.data.audioArray)) {
+      const now = Date.now();
+      if (now - lastKwsForwardTime > KWS_FORWARD_INTERVAL) {
+        speakerFrame.contentWindow.postMessage({
+          action: 'classifyAudio',
+          audioArray: event.data.audioArray
+        }, '*');
+        lastKwsForwardTime = now;
+        console.log("Áudio KWS enviado para Speaker");
+      }
+    }
+
+    if (event.data && event.data.modelo === 'speaker') {
+      if (normaliza(event.data.label) === 'diana') {
+        console.log("Speaker detectou 'diana', disparando alarme");
+        mostrarAlarme();
+      }
+    }
+  });
+
+  function mostrarAlarme() {
+    const alarmeDiv = document.getElementById('alarme');
+    alarmeDiv.textContent = "ALERTA!";
+    alarmeDiv.style.display = 'block';
+    clearTimeout(alarmeTimeout);
+    alarmeTimeout = setTimeout(() => { alarmeDiv.style.display = 'none'; }, 1000);
+    const ahora = Date.now();
+    alertaActivacoes.push(ahora);
+    alertaActivacoes = alertaActivacoes.filter(ts => ahora - ts <= 6000);
+    console.log("Alarme exibido, ativações:", alertaActivacoes);
+
+    if (alertaActivacoes.length >= 2) {
+      alertaActivacoes = [];
+      console.log("Condição de SOS atingida, enviando SOS");
+      mostrarSOS();
+    }
+  }
+
+  function ocultarAlarme() {
+    clearTimeout(alarmeTimeout);
+    document.getElementById('alarme').style.display = 'none';
+    console.log("Alarme ocultado");
+  }
+
+  function mostrarSOS() {
+    const sosDiv = document.getElementById('sos-alarme');
+    sosDiv.style.display = 'block';
+    clearTimeout(sosTimeout);
+    sosTimeout = setTimeout(() => { sosDiv.style.display = 'none'; }, 1000);
+    console.log("SOS exibido, enviando mensagem para Telegram");
+    if (ubicacionDisponible) {
+      enviarTelegram("SOS: Diana pediu ajuda! Enviando localização...");
+      setTimeout(() => { enviarUbicacionTelegram(lastLat, lastLon); }, 800);
+    } else {
+      enviarTelegram("SOS: Diana pediu ajuda! (localização indisponível)");
+    }
+  }
+
+  function ocultarSOS() {
+    clearTimeout(sosTimeout);
+    document.getElementById('sos-alarme').style.display = 'none';
+    console.log("SOS ocultado");
+  }
+
+  function mostrarConfigTelegram() {
+    document.getElementById('telegram-config').style.display = 'flex';
+    const chatId1Salvo = localStorage.getItem('telegram_chat_id_1');
+    const chatId2Salvo = localStorage.getItem('telegram_chat_id_2');
+    if (chatId1Salvo) document.getElementById('chatIdInput1').value = chatId1Salvo;
+    if (chatId2Salvo) document.getElementById('chatIdInput2').value = chatId2Salvo;
+    console.log("Configuração do Telegram exibida, chat_id_1 salvo:", chatId1Salvo, "chat_id_2 salvo:", chatId2Salvo);
+  }
+
+  function salvarChatIds() {
+    const chatId1 = document.getElementById('chatIdInput1').value.trim();
+    const chatId2 = document.getElementById('chatIdInput2').value.trim();
+    if (chatId1) {
+      localStorage.setItem('telegram_chat_id_1', chatId1);
+      if (chatId2) {
+        localStorage.setItem('telegram_chat_id_2', chatId2);
+      } else {
+        localStorage.removeItem('telegram_chat_id_2');
+      }
+      alert('Contatos salvos com sucesso!');
+      document.getElementById('telegram-config').style.display = 'none';
+      console.log("Chat ID 1 salvo:", chatId1, "Chat ID 2 salvo:", chatId2 || "nenhum");
+    } else {
+      alert('Por favor, insira pelo menos o primeiro chat_id válido.');
+      console.log("Tentativa de salvar chat_id_1 vazio");
+    }
+  }
+
+  function obterChatIds() {
+    const chatId1 = localStorage.getItem('telegram_chat_id_1') || "7034637089";
+    const chatId2 = localStorage.getItem('telegram_chat_id_2') || null;
+    console.log("Chat IDs obtidos:", chatId1, chatId2);
+    return [chatId1, chatId2].filter(id => id);
+  }
+
+  function enviarTelegram(mensagem = "Estou em perigo!") {
+    const token = "7391824108:AAEmDQNUzvSwnplT800ZV0JCmh2dGWVdYL4";
+    const chatIds = obterChatIds();
+    chatIds.forEach(chat_id => {
+      const url = `https://api.telegram.org/bot${token}/sendMessage?chat_id=${chat_id}&text=${encodeURIComponent(mensagem)}`;
+      console.log("Enviando mensagem para Telegram:", mensagem, "Chat ID:", chat_id);
+      fetch(url)
+        .then(r => {
+          if (!r.ok) {
+            return r.json().then(err => { throw new Error(err.description); });
+          }
+          return r.json();
+        })
+        .catch(e => console.error(e));
+    });
+  }
+
+  function enviarUbicacionTelegram(lat, lon) {
+    const token = "7391824108:AAEmDQNUzvSwnplT800ZV0JCmh2dGWVdYL4";
+    const chatIds = obterChatIds();
+    chatIds.forEach(chat_id => {
+      const url = `https://api.telegram.org/bot${token}/sendLocation?chat_id=${chat_id}&latitude=${lat}&longitude=${lon}`;
+      console.log("Enviando localização:", lat, lon, "Chat ID:", chat_id);
+      fetch(url).catch(e => console.error(e));
+    });
+  }
+</script>
+</body>
+</html>

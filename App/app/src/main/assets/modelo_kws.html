@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Palavra-chave</title>
+  <style>
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin: 0;
+  padding: 7px 2vw 0 2vw;
+  background: #fff;
+  width: 100vw;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+h2 {
+  color: #2d3a4a;
+  margin-top: 5px;
+  margin-bottom: 10px;
+  font-size: 1.2rem;
+  background: #e8f0ffbb;
+  border-radius: 7px;
+  padding: 2px 13px;
+  display: inline-flex;
+  align-items: center;
+}
+#status {
+  font-weight: bold;
+  margin-left: 8px;
+  color: #1a4648;
+  font-size: 0.9em;
+}
+#result {
+  margin-top: 16px;
+  font-size: 1.1rem;
+  color: #18466b;
+  word-break: break-word;
+  max-width: 98vw;
+}
+@media (max-width: 600px) {
+  h2 { font-size: 1.01rem; padding: 2px 4vw; }
+  #status, #result { font-size: 1rem; }
+}
+  </style>
+</head>
+<body>
+  <h2>
+    Palavra-chave
+    <span id="status"></span>
+  </h2>
+  <div id="result"></div>
+  <script src="edge-impulse-standalone.js?v=2"></script>
+  <script src="run-impulse.js?v=2"></script>
+  <script>
+    let audioContext, microphone, audioWorkletNode;
+    let classifier, isModelInitialized = false, isListening = false;
+    const TARGET_SAMPLE_RATE = 16000;
+    const WINDOW_LENGTH_MS = 1000;
+    const WINDOW_STRIDE_MS = 500;
+    const EXPECTED_SAMPLES = TARGET_SAMPLE_RATE * (WINDOW_LENGTH_MS / 1000);
+    const STRIDE_SAMPLES = TARGET_SAMPLE_RATE * (WINDOW_STRIDE_MS / 1000);
+    let audioBuffer = new Float32Array(EXPECTED_SAMPLES);
+    let bufferWritePosition = 0;
+    let totalSamplesProcessed = 0;
+    const statusSpan = document.getElementById('status');
+    const resultDiv = document.getElementById('result');
+
+    async function initModel() {
+      try {
+        classifier = new EdgeImpulseClassifier();
+        await classifier.init();
+        isModelInitialized = true;
+        statusSpan.textContent = 'Pronto';
+      } catch (err) {
+        console.error('Erro ao carregar o modelo:', err);
+      }
+    }
+    initModel();
+
+    function processAudioChunk(chunk) {
+      for (let i = 0; i < chunk.length; i++) {
+        audioBuffer[bufferWritePosition] = chunk[i];
+        bufferWritePosition = (bufferWritePosition + 1) % EXPECTED_SAMPLES;
+        totalSamplesProcessed++;
+      }
+    }
+
+    async function startListening() {
+      if (!isModelInitialized || isListening) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const track = stream.getAudioTracks()[0];
+        const settings = track.getSettings();
+        const sourceSampleRate = settings.sampleRate || 44100;
+        console.log('Frecuencia de muestreo del stream:', sourceSampleRate);
+
+        audioContext = new AudioContext({ sampleRate: sourceSampleRate });
+        console.log('Frecuencia de muestreo del AudioContext:', audioContext.sampleRate);
+        microphone = audioContext.createMediaStreamSource(stream);
+
+        
+        await audioContext.audioWorklet.addModule('audio-processor.js');
+        audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor', {
+          processorOptions: {
+            sourceSampleRate: sourceSampleRate,
+            targetSampleRate: TARGET_SAMPLE_RATE
+          }
+        });
+
+        
+        audioWorkletNode.port.onmessage = (event) => {
+          const inputData = event.data;
+          processAudioChunk(inputData);
+        };
+
+        microphone.connect(audioWorkletNode);
+                isListening = true;
+        startContinuousClassification();
+      } catch (err) {
+        console.error('Erro ao iniciar a escuta:', err);
+      }
+    }
+
+    function stopListening() {
+      if (isListening) {
+        microphone.disconnect();
+        audioWorkletNode.disconnect();
+        audioContext.close();
+        isListening = false;
+        resultDiv.textContent = '';
+      }
+    }
+
+    async function startContinuousClassification() {
+      let lastProcessedSample = 0;
+      while (isListening) {
+        if (totalSamplesProcessed - lastProcessedSample >= STRIDE_SAMPLES) {
+          const inputData = new Float32Array(EXPECTED_SAMPLES);
+          const startPos = (bufferWritePosition - EXPECTED_SAMPLES + EXPECTED_SAMPLES) % EXPECTED_SAMPLES;
+          for (let i = 0; i < EXPECTED_SAMPLES; i++) {
+            inputData[i] = audioBuffer[(startPos + i) % EXPECTED_SAMPLES];
+          }
+          try {
+            const result = await classifier.classifyContinuous(inputData, true);
+            const topKws = result.results.reduce((max, curr) => max.value > curr.value ? max : curr, result.results[0]);
+            resultDiv.innerHTML = `<b>Palavra-chave:</b> ${topKws.label} (${(topKws.value*100).toFixed(1)}%)`;
+
+            let audioArrayToSend = null;
+            if (
+              (topKws.label.toLowerCase().trim() === 'pipoca' || topKws.label.toLowerCase().trim() === 'morango') &&
+              inputData.length === EXPECTED_SAMPLES
+            ) {
+              audioArrayToSend = Array.from(inputData);
+              console.log('Enviando audioArray:', audioArrayToSend.length, audioArrayToSend);
+            }
+
+            window.parent.postMessage({
+              modelo: 'kws',
+              label: topKws.label,
+              value: topKws.value,
+              audioArray: audioArrayToSend
+            }, '*');
+            lastProcessedSample = totalSamplesProcessed;
+          } catch (err) {
+            console.error('Erro na classificação:', err);
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+    }
+
+    window.addEventListener("message", (event) => {
+      if (!event.data || !event.data.action) return;
+      if (event.data.action === "startListening") startListening();
+      if (event.data.action === "stopListening") stopListening();
+    });
+  </script>
+</body>
+</html>
